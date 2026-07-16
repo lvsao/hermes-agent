@@ -18,6 +18,7 @@ import {
   setupMockBackend,
   waitForAppReady,
 } from './fixtures'
+import { expectVisualSnapshot } from './visual-snapshot'
 
 let fixture: MockBackendFixture | null = null
 
@@ -57,7 +58,6 @@ test.describe('dev-mode boot with mock backend', () => {
   })
 
   test('screenshot after boot', async () => {
-    const screenshot = await fixture!.page.screenshot({ timeout: 30_000 })
-    expect(screenshot.byteLength).toBeGreaterThan(0)
+    await expectVisualSnapshot(fixture!.page, { name: 'boot-ready', app: fixture!.app })
   })
 })

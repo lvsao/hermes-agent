@@ -12,10 +12,11 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  setupNoProvider,
   type NoProviderFixture,
+  setupNoProvider,
   waitForOnboarding,
 } from './fixtures'
+import { expectVisualSnapshot } from './visual-snapshot'
 
 let fixture: NoProviderFixture | null = null
 
@@ -37,6 +38,7 @@ test.describe('onboarding with no provider configured', () => {
   test('onboarding shows provider options or API key form', async () => {
     if (!fixture) {
       test.skip(true, 'Previous test failed — no app running')
+
       return
     }
 
@@ -47,6 +49,7 @@ test.describe('onboarding with no provider configured', () => {
     // link. Verify at least one of these is visible.
     const rootText = await page.evaluate(() => {
       const root = document.getElementById('root')
+
       return root?.textContent ?? ''
     })
 
@@ -64,10 +67,10 @@ test.describe('onboarding with no provider configured', () => {
   test('screenshot of onboarding overlay', async () => {
     if (!fixture) {
       test.skip(true, 'Previous test failed — no app running')
+
       return
     }
 
-    const screenshot = await fixture.page.screenshot()
-    expect(screenshot.byteLength).toBeGreaterThan(0)
+    await expectVisualSnapshot(fixture.page, { name: 'onboarding-overlay', app: fixture.app })
   })
 })

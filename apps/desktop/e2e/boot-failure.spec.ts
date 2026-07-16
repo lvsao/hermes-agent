@@ -10,13 +10,14 @@
  * Prerequisite: `npm run build` must have been run so dist/ exists.
  */
 
-import { expect, test } from '@playwright/test'
+import { test } from '@playwright/test'
 
 import {
-  setupDeadBackend,
   type DeadBackendFixture,
+  setupDeadBackend,
   waitForBootFailure,
 } from './fixtures'
+import { expectVisualSnapshot } from './visual-snapshot'
 
 let fixture: DeadBackendFixture | null = null
 
@@ -42,10 +43,10 @@ test.describe('boot failure with dead provider endpoint', () => {
   test('screenshot of error state', async () => {
     if (!fixture) {
       test.skip(true, 'Previous test failed — no app running')
+
       return
     }
 
-    const screenshot = await fixture.page.screenshot()
-    expect(screenshot.byteLength).toBeGreaterThan(0)
+    await expectVisualSnapshot(fixture!.page, { name: 'boot-failure-error-state', app: fixture.app })
   })
 })

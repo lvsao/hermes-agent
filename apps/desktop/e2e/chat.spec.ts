@@ -8,13 +8,14 @@
  * Prerequisite: `npm run build` must have been run so dist/ exists.
  */
 
-import { expect, test } from '@playwright/test'
+import { test } from '@playwright/test'
 
 import {
-  setupMockBackend,
   type MockBackendFixture,
+  setupMockBackend,
   waitForAppReady,
 } from './fixtures'
+import { expectVisualSnapshot } from './visual-snapshot'
 
 let fixture: MockBackendFixture | null = null
 
@@ -52,9 +53,11 @@ test.describe('chat interaction with mock backend', () => {
     await page.waitForFunction(
       () => {
         const body = document.body
+
         if (!body) {
           return false
         }
+
         return (body.textContent ?? '').includes('Hello, can you hear me?')
       },
       { timeout: 15_000 },
@@ -67,10 +70,13 @@ test.describe('chat interaction with mock backend', () => {
     await page.waitForFunction(
       () => {
         const body = document.body
+
         if (!body) {
           return false
         }
+
         const text = body.textContent ?? ''
+
         return text.includes('mock inference server') || text.includes('boot chain is working')
       },
       { timeout: 60_000 },
@@ -78,7 +84,6 @@ test.describe('chat interaction with mock backend', () => {
   })
 
   test('screenshot of chat with messages', async () => {
-    const screenshot = await fixture!.page.screenshot({ timeout: 30_000 })
-    expect(screenshot.byteLength).toBeGreaterThan(0)
+    await expectVisualSnapshot(fixture!.page, { name: 'chat-with-messages', app: fixture!.app })
   })
 })

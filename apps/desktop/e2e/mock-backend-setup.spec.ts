@@ -18,10 +18,11 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  setupMockBackend,
   type MockBackendFixture,
+  setupMockBackend,
   waitForAppReady,
 } from './fixtures'
+import { expectVisualSnapshot } from './visual-snapshot'
 
 let fixture: MockBackendFixture | null = null
 
@@ -46,6 +47,7 @@ test.describe('mock backend gets past setup screen', () => {
     await page.waitForFunction(
       () => {
         const text = document.body.textContent ?? ''
+
         return !text.includes("Let's get you setup")
       },
       { timeout: 30_000 },
@@ -78,7 +80,6 @@ test.describe('mock backend gets past setup screen', () => {
   })
 
   test('screenshot shows chat UI without setup screen', async () => {
-    const screenshot = await fixture!.page.screenshot({ timeout: 30_000 })
-    expect(screenshot.byteLength).toBeGreaterThan(0)
+    await expectVisualSnapshot(fixture!.page, { name: 'mock-backend-chat-ready', app: fixture!.app })
   })
 })

@@ -60,15 +60,103 @@ jobs:
       # ── Build desktop app ─────────────────────────────────────────────
       - run: npm run --prefix apps/desktop build
 
+      # ── Restore visual baseline screenshots from main ──────────────────
+      # Baselines are generated on main (via --update-snapshots) and cached.
+      # On PRs, we restore them so toHaveScreenshot has something to compare
+      # against.  The cache key is keyed on the desktop source files so a
+      # UI change naturally invalidates it — but we fall back to the main
+      # cache to avoid cold starts on unrelated PRs.
+      - name: Restore visual baseline screenshots
+        id: restore-baselines
+        uses: actions/cache@0400d5f6a4f407c1b1b78f4ddd5bffb6548ef6f6 # v4.2.4
+        with:
+          path: apps/desktop/e2e/__screenshots__
+          key: visual-baselines-${{ github.ref_name }}
+          restore-keys: |
+            visual-baselines-main
+
       # ── Run Playwright E2E under xvfb ─────────────────────────────────
+      # xvfb runs at a fixed 1280x1024 screen so the 1220x800 Electron
+      # window always has a consistent viewport for screenshot comparison.
+      # On main, we run with --update-snapshots to generate baselines.
       - name: Run Playwright E2E tests
         working-directory: apps/desktop
-        run: xvfb-run -a npx playwright test --reporter=list
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "On main — generating/updating baseline screenshots"
+            xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+              npx playwright test --reporter=list --update-snapshots
+          else
+            echo "On PR — comparing against cached baselines"
+            xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+              npx playwright test --reporter=list
+          fi
         env:
+          CI: "true"
           # Ensure no real API keys leak into the test env.
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
           NOUS_API_KEY: ""
+
+      # ── Generate step summary with visual diff info ───────────────────
+      # Parse the JSON report + scan for diff images, then post a summary
+      # to the GitHub Actions step output so reviewers can see what changed
+      # without downloading artifacts.
+      - name: Generate visual diff summary
+        if: always()
+        working-directory: apps/desktop
+        run: |
+          echo "## Desktop E2E — Visual Diff Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # Count diff images (playwright writes *-diff.png on mismatch)
+          DIFF_COUNT=$(find test-results -name '*-diff.png' 2>/dev/null | wc -l)
+          ACTUAL_COUNT=$(find test-results -name '*-actual.png' 2>/dev/null | wc -l)
+
+          if [ "$DIFF_COUNT" -eq 0 ] && [ "$ACTUAL_COUNT" -eq 0 ]; then
+            echo "✅ All screenshots matched their baselines (or no baselines existed yet)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "📸 **$DIFF_COUNT screenshot(s) differ from baseline:**" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Test | Diff | Actual | Expected |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|------|------|--------|----------|" >> "$GITHUB_STEP_SUMMARY"
+
+            # List each diff image with a link to the artifact
+            for diff in $(find test-results -name '*-diff.png' 2>/dev/null | sort); do
+              base=$(echo "$diff" | sed 's/-diff\.png$//')
+              test_name=$(basename "$base")
+              echo "| $test_name | [diff]($diff) | [actual](${base}-actual.png) | [expected](${base}-expected.png) |" >> "$GITHUB_STEP_SUMMARY"
+            done
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Diff images are in the \`playwright-test-results\` artifact. Download and open to compare." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**To update baselines:** merge to main (baselines auto-update on main runs) or run \`npx playwright test --update-snapshots\` locally." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Also parse the JSON report for pass/fail counts
+          if [ -f playwright-report/results.json ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Test Results" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            node -e "
+              const r = require('./playwright-report/results.json');
+              const stats = r.stats || {};
+              console.log('| Status | Count |');
+              console.log('|--------|-------|');
+              console.log('| ✅ Passed | ' + (stats.expected || 0) + ' |');
+              console.log('| ❌ Failed | ' + (stats.unexpected || 0) + ' |');
+              console.log('| ⏭️ Skipped | ' + (stats.skipped || 0) + ' |');
+              console.log('| 🔄 Flaky | ' + (stats.flaky || 0) + ' |');
+            " >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          fi
+
+      # ── Save updated baselines to cache (main only) ───────────────────
+      - name: Save updated baselines to cache
+        if: github.ref_name == 'main' && always()
+        uses: actions/cache/save@0400d5f6a4f407c1b1b78f4ddd5bffb6548ef6f6 # v4.2.4
+        with:
+          path: apps/desktop/e2e/__screenshots__
+          key: visual-baselines-main
 
       # ── Upload Playwright report (HTML + traces) ──────────────────────
       - name: Upload Playwright report
@@ -80,7 +168,7 @@ jobs:
           retention-days: 14
           overwrite: true
 
-      # ── Upload test results (screenshots, traces) ─────────────────────
+      # ── Upload test results (screenshots, traces, diffs) ───────────────
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -89,3 +177,17 @@ jobs:
           path: apps/desktop/test-results
           retention-days: 14
           overwrite: true
+
+      # ── Upload just the visual diffs (small, fast to review) ──────────
+      - name: Upload visual diffs
+        if: always() && github.ref_name != 'main'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: visual-diffs-${{ github.sha }}
+          path: |
+            apps/desktop/test-results/**/*-diff.png
+            apps/desktop/test-results/**/*-actual.png
+            apps/desktop/test-results/**/*-expected.png
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: ignore

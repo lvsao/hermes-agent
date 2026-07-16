@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  packagedBinaryExists,
   PACKAGED_BINARY_PATH,
-  setupPackagedApp,
   type PackagedAppFixture,
+  packagedBinaryExists,
+  setupPackagedApp,
 } from './fixtures'
+import { expectVisualSnapshot } from './visual-snapshot'
 
 /**
  * E2E smoke tests for the packaged Hermes desktop app.
@@ -50,9 +51,11 @@ test('boot progress overlay fades out or shows error state', async () => {
   await page.waitForFunction(
     () => {
       const root = document.getElementById('root')
+
       if (!root) {
         return false
       }
+
       const text = root.textContent ?? ''
 
       // Error path: boot failure overlay renders an error message.
@@ -73,10 +76,12 @@ test('boot progress overlay fades out or shows error state', async () => {
 })
 
 test('can capture a screenshot for the CI artifact', async () => {
-  const screenshot = await fixture!.page.screenshot({ timeout: 10_000 }).catch(() => null)
-  if (screenshot) {
-    expect(screenshot.byteLength).toBeGreaterThan(0)
-  } else {
-    test.skip(true, 'Screenshot timed out — likely a GPU/rendering issue in headless mode')
+  if (!fixture) {
+    test.skip(true, 'Previous test failed — no app running')
+
+    return
   }
+
+  // Visual snapshot — won't fail on diff, just logs + generates diff image
+  await expectVisualSnapshot(fixture!.page, { name: 'packaged-app-booted', timeout: 10_000, app: fixture!.app })
 })

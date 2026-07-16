@@ -1,6 +1,28 @@
-import { defineConfig } from '@playwright/test'
-
 import './e2e/fix-electron-tracing'
+
+import { defineConfig, type ReporterDescription } from '@playwright/test'
+
+/**
+ * Visual regression testing config.
+ *
+ * Screenshots are compared against baselines.  On `main`, baselines are
+ * generated with `--update-snapshots` and cached.  On PRs, the cached
+ * baselines are restored and screenshots are compared — but tests DON'T
+ * fail on visual diffs (see `expectVisualSnapshot` in visual-snapshot.ts).
+ * Instead, diffs are surfaced in the CI step summary and uploaded as
+ * artifacts for human review.
+ *
+ * To update baselines after an intentional UI change:
+ *   npx playwright test --update-snapshots
+ */
+const reporters: ReporterDescription[] = [
+  ['list'],
+  ['html', { open: 'never', outputFolder: 'playwright-report' }],
+]
+
+if (process.env.CI) {
+  reporters.push(['json', { outputFile: 'playwright-report/results.json' }])
+}
 
 export default defineConfig({
   /* Test files live under e2e/ so they never collide with the vitest suite
@@ -12,9 +34,20 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   /* Each test gets its own worker so the Electron process is fully isolated. */
   fullyParallel: false,
-  reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
+  reporter: reporters,
   use: {
     screenshot: 'on',
     trace: { mode: 'on', screenshots: true, snapshots: true, sources: true },
+  },
+  expect: {
+    toHaveScreenshot: {
+      // 1% of pixels may differ — absorbs sub-pixel font rendering variance
+      // between local and CI environments.
+      maxDiffPixelRatio: 0.01,
+      animations: 'disabled',
+      caret: 'hide',
+      // Per-channel threshold for "close enough" — anti-aliasing differences.
+      threshold: 0.2,
+    },
   },
 })
